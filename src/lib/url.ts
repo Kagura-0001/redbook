@@ -31,6 +31,70 @@ export function enrichWithWebUrl<T>(obj: T, source: string = "pc_feed"): T {
   return obj;
 }
 
+export interface NoteRef {
+  noteId: string;
+  xsecToken: string | null;
+}
+
+export interface UserRef {
+  userId: string;
+  xsecToken: string | null;
+  xsecSource: string | null;
+}
+
+function pathParts(input: string): { parts: string[]; url: URL } | null {
+  try {
+    const url = new URL(input);
+    return { parts: url.pathname.split("/").filter(Boolean), url };
+  } catch {
+    return null;
+  }
+}
+
+/** Note id and token from a note URL (/explore/<id>, /discovery/item/<id>) or a bare id. */
+export function parseNoteUrl(input: string): NoteRef {
+  const parsed = pathParts(input);
+  if (!parsed) return { noteId: input, xsecToken: null };
+  return {
+    noteId: parsed.parts[parsed.parts.length - 1] ?? input,
+    xsecToken: parsed.url.searchParams.get("xsec_token"),
+  };
+}
+
+export function parseBoardUrl(input: string): string {
+  const parsed = pathParts(input);
+  return parsed?.parts[parsed.parts.length - 1] ?? input;
+}
+
+/** User id and token from a profile URL (/user/profile/<id>?xsec_token=...) or a bare id. */
+export function parseUserProfileArg(
+  input: string,
+  opts: { xsecToken?: string; xsecSource?: string } = {}
+): UserRef {
+  let userId = input;
+  let xsecToken = opts.xsecToken ?? null;
+  let xsecSource = opts.xsecSource ?? null;
+
+  const parsed = pathParts(input);
+  if (parsed) {
+    const profileIdx = parsed.parts.indexOf("profile");
+    userId = parsed.parts[profileIdx >= 0 ? profileIdx + 1 : parsed.parts.length - 1] ?? input;
+    xsecToken = parsed.url.searchParams.get("xsec_token") ?? xsecToken;
+    xsecSource = parsed.url.searchParams.get("xsec_source") ?? xsecSource;
+  }
+
+  // Red IDs (小红书号) are all digits; the API needs the 24-char hex user ID.
+  if (/^\d+$/.test(userId)) {
+    throw new Error(
+      `"${userId}" looks like a 小红书号 (Red ID), not a user ID. ` +
+      "Use the 24-character ID from the profile URL (/user/profile/<id>), or pass the full profile URL."
+    );
+  }
+
+  if (xsecToken && !xsecSource) xsecSource = "pc_search";
+  return { userId, xsecToken, xsecSource };
+}
+
 function walk(value: unknown, source: string): void {
   if (!value || typeof value !== "object") return;
   if (Array.isArray(value)) {

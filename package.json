@@ -16,6 +16,7 @@
   "files": [
     "dist/",
     "scripts/",
+    "references/",
     "SKILL.md",
     "LICENSE",
     "README.md"
@@ -26,7 +27,8 @@
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "preuninstall": "node scripts/preuninstall.js",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "test": "npm run build && node --test"
   },
   "engines": {
     "node": ">=22"

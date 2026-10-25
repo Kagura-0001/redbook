@@ -6,7 +6,8 @@
  */
 
 import { QUESTION_PATTERN } from "./analyze.js";
-import { XhsClient, NeedVerifyError } from "./client.js";
+import type { XhsClient } from "./client.js";
+import { errorInfo } from "./errors.js";
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export interface ReplyPlan {
 export interface ReplyResult {
   commentId: string;
   author: string;
+  content: string;
   success: boolean;
   error?: string;
 }
@@ -130,25 +132,13 @@ export async function executeReplies(
   for (const candidate of candidates) {
     const replyText = expandTemplate(template, candidate, context);
 
+    const result = { commentId: candidate.commentId, author: candidate.author, content: replyText };
     try {
       await client.replyComment(noteId, candidate.commentId, replyText);
-      results.push({ commentId: candidate.commentId, author: candidate.author, success: true });
+      results.push({ ...result, success: true });
     } catch (err) {
-      if (err instanceof NeedVerifyError) {
-        results.push({
-          commentId: candidate.commentId,
-          author: candidate.author,
-          success: false,
-          error: "Captcha triggered — stopping batch",
-        });
-        break; // Stop immediately on captcha
-      }
-      results.push({
-        commentId: candidate.commentId,
-        author: candidate.author,
-        success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
+      results.push({ ...result, success: false, error: err instanceof Error ? err.message : "Unknown error" });
+      if (errorInfo(err).exit === 4) break; // captcha, IP block or cooldown: stop the batch
     }
 
     // Rate limit between replies with jitter (skip after last)

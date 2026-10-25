@@ -9,6 +9,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import kleur from "kleur";
 import { extractCookiesViaCdp } from "./cdp-cookies.js";
+import { NotLoggedInError } from "./errors.js";
 
 export interface XhsCookies {
   a1: string;
@@ -179,7 +180,7 @@ function buildNoCookieError(
     '  then: redbook whoami --cookie-string "a1=VALUE; web_session=VALUE"',
   );
 
-  return new Error(lines.join("\n"));
+  return new NotLoggedInError(lines.join("\n"));
 }
 
 /**

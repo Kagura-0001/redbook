@@ -142,18 +142,21 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `reply <url>` | 回复指定评论 |
 | `batch-reply <url>` | 按策略批量回复评论（支持预览模式） |
 | `render <文件>` | Markdown 渲染为小红书图文卡片 PNG（需可选依赖） |
-| `auth` | 保存、导出、检查 Cookie 文件，适合云端/OpenClaw 使用 |
+| `auth` | 保存、导出、列出账号的 Cookie 文件（多账号、云端/OpenClaw） |
+| `cooldown` | 查看或解除账号的风控冷却 |
 
 ### 通用选项
 
 | 选项 | 说明 | 默认值 |
 |------|------|--------|
+| `--account <名称>` | 使用已保存的账号（见 `redbook auth list`），不会回退到浏览器 Cookie | 无 |
 | `--cookie-source <浏览器>` | Cookie 来源浏览器（chrome, safari, firefox） | `chrome` |
 | `--chrome-profile <名称>` | Chrome 配置文件目录名（如 "Profile 1"），默认自动检测 | 自动 |
 | `--cookie-string <cookies>` | 手动传入 Cookie 字符串：`"a1=值; web_session=值"`（从 Chrome DevTools 复制） | 无 |
 | `--platform <name>` | 强制后端：`xhs`（大陆）或 `rednote`（全球版），不传则自动检测 | 自动 |
 | `--global` | 强制使用全球版 RedNote 后端（等同 `--platform rednote`） | 无 |
-| `--json` | JSON 格式输出 | `false` |
+| `--json` | JSON 格式输出；失败时输出 `{"error": {"code", "message"}}` | `false` |
+| `--dry-run` | 写操作（post/comment/reply/like/collect/uncollect/delete）只预览不发送 | 无 |
 
 ### 保存 Cookie / 云端使用
 
@@ -179,6 +182,44 @@ redbook search "AI编程" --json
 ```
 
 Cookie 文件是明文登录凭据，默认写入权限为 `0600`。不要提交到 Git，也不要贴到日志里。需要撤销时可以删除文件或执行 `redbook auth clear`，然后在浏览器里退出登录/重新登录刷新会话。
+
+### 多账号
+
+每个账号存成 `~/.redbook/accounts/<名称>.json`，命令里加 `--account <名称>`（或设置 `REDBOOK_ACCOUNT`）就以这个账号操作。保存时会调用一次 `/user/me`，确认已登录并记下昵称。
+
+```bash
+# 在另一个 Chrome 配置文件里登录第二个账号，然后：
+redbook auth export --account brand --chrome-profile "Profile 2"
+redbook auth list                 # 账号名、昵称、平台、是否在冷却
+redbook whoami --account brand
+redbook search "AI编程" --account brand --json
+```
+
+指定了 `--account` 时只用该账号保存的 Cookie，不会回退到浏览器，避免误用 Chrome 里当前登录的账号。请求间隔和风控冷却也按账号分别计算。
+
+### 写操作：先预览再发送
+
+`post`、`comment`、`reply`、`like`、`collect`、`uncollect`、`delete` 都支持 `--dry-run`，只打印账号、动作、目标和内容，不发任何请求。`delete` 还必须加 `--yes`。真正发出的写操作会追加记录到 `~/.redbook/audit.jsonl`，方便回看每个账号做过什么。
+
+```bash
+redbook comment "<noteUrl>" --content "写得很清楚" --account brand --dry-run
+redbook delete "<noteUrl>" --yes
+```
+
+### 限速与风控冷却
+
+同一个账号的每个请求之间至少间隔约 1 秒，再加随机抖动。间隔记录在磁盘上，所以连续运行多条命令也不会突发请求。GET 请求遇到 429、5xx 或网络错误会退避重试，写操作从不自动重试。
+
+一旦遇到验证码或 IP 封禁（300012），该账号进入 30 分钟冷却：期间所有命令直接以 `risk_cooldown` 失败，不再请求小红书。在浏览器里完成验证后，可以用 `redbook cooldown --account <名称> --clear` 提前解除。
+
+### 退出码
+
+| 退出码 | 错误码 | 含义 |
+|--------|--------|------|
+| 0 | — | 成功 |
+| 1 | `missing_xsec_token`、`signature_rejected`、`api_error`、`error` | 输入有误、签名过期或其他错误 |
+| 3 | `not_logged_in`、`no_permission` | 需要重新登录，或账号没有该接口权限（-104） |
+| 4 | `captcha`、`ip_blocked`、`risk_cooldown` | 触发风控，应停止操作 |
 
 ### 用户主页选项
 
@@ -511,18 +552,21 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `reply <url>` | Reply to a specific comment |
 | `batch-reply <url>` | Batch reply to comments with filtering strategy (supports dry-run) |
 | `render <file>` | Render markdown to styled PNG image cards for XHS posts (optional deps) |
-| `auth` | Save, export, inspect, and clear reusable cookie files for cloud/OpenClaw runs |
+| `auth` | Save, export, list, inspect, and clear account cookie files (multiple accounts, cloud/OpenClaw) |
+| `cooldown` | Show or clear an account's risk-control cooldown |
 
 ### Global Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--account <name>` | Act as a saved account (see `redbook auth list`). Never falls back to browser cookies | none |
 | `--cookie-source <browser>` | Browser to read cookies from (chrome, safari, firefox) | `chrome` |
 | `--chrome-profile <name>` | Chrome profile directory name (e.g., "Profile 1"). Auto-detected if omitted. | auto |
 | `--cookie-string <cookies>` | Manual cookie string: `"a1=VALUE; web_session=VALUE"` (from Chrome DevTools) | none |
 | `--platform <name>` | Force backend: `xhs` (mainland) or `rednote` (global). Omit to auto-detect. | auto |
 | `--global` | Force the global RedNote backend (= `--platform rednote`) | — |
-| `--json` | Output as JSON | `false` |
+| `--json` | Output as JSON; on failure prints `{"error": {"code", "message"}}` | `false` |
+| `--dry-run` | For writes (post/comment/reply/like/collect/uncollect/delete): preview without sending | none |
 
 > **Mainland 小红书 vs global RedNote — handled automatically.** These are two separate backends (`xiaohongshu.com` / `edith.xiaohongshu.com` vs `rednote.com` / `webapi.rednote.com`) with separate sessions and cookie domains; RedNote routes you to one by IP/region and you can only be signed into one at a time. The CLI **auto-detects which one you're logged into** (probing both cookie domains, verifying with one `/user/me` call when both have cookies, then caching the result in `~/.redbook/`), so you normally pass **no flag**. Use `--global` / `--platform xhs` only to force one.
 
@@ -550,6 +594,44 @@ redbook search "AI编程" --json
 ```
 
 The cookie file is a plaintext login credential and is written with `0600` permissions by default. Do not commit it or print it in logs. To revoke local reuse, remove it with `redbook auth clear`, then log out/in from the browser to rotate the session.
+
+### Multiple Accounts
+
+Each account is saved as `~/.redbook/accounts/<name>.json`; add `--account <name>` (or set `REDBOOK_ACCOUNT`) to act as it. Saving makes one `/user/me` call to confirm the login and record the nickname.
+
+```bash
+# Log into the second account in another Chrome profile, then:
+redbook auth export --account brand --chrome-profile "Profile 2"
+redbook auth list                 # name, nickname, platform, cooldown
+redbook whoami --account brand
+redbook search "AI编程" --account brand --json
+```
+
+With `--account`, only that account's saved cookies are used — never the browser — so a command can't silently act as whoever is logged into Chrome. Pacing and cooldown are tracked per account.
+
+### Writes: Preview, Then Send
+
+`post`, `comment`, `reply`, `like`, `collect`, `uncollect` and `delete` accept `--dry-run`, which prints the account, action, target and text without sending anything. `delete` also needs `--yes`. Real writes are appended to `~/.redbook/audit.jsonl`, so you can look back at what each account did.
+
+```bash
+redbook comment "<noteUrl>" --content "Great post" --account brand --dry-run
+redbook delete "<noteUrl>" --yes
+```
+
+### Pacing and Cooldown
+
+Requests of one account are spaced at least ~1 s apart plus random jitter. The timing lives on disk, so back-to-back commands can't burst either. GETs retry with backoff on 429/5xx/network errors; writes are never retried.
+
+After a captcha or an IP block (300012) the account enters a 30-minute cooldown: every command for it fails fast with `risk_cooldown` and sends nothing. Once the captcha is solved in the browser, `redbook cooldown --account <name> --clear` ends it early.
+
+### Exit Codes
+
+| Exit | Codes | Meaning |
+|------|-------|---------|
+| 0 | — | Success |
+| 1 | `missing_xsec_token`, `signature_rejected`, `api_error`, `error` | Bad input, outdated signing, or another error |
+| 3 | `not_logged_in`, `no_permission` | Log in again, or the account lacks access to the endpoint (-104) |
+| 4 | `captcha`, `ip_blocked`, `risk_cooldown` | Risk control — stop |
 
 ### User Profile Options
 

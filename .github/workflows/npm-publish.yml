@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'test/**'
       - 'package.json'
       - 'tsconfig.json'
       - 'SKILL.md'
@@ -31,6 +32,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Test
+        run: node --test
 
   check-version:
     runs-on: ubuntu-latest
