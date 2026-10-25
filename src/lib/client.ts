@@ -204,7 +204,7 @@ export class XhsClient {
     const code = data.code as string | number | undefined;
     if (res.status === 406) {
       throw new XhsApiError(
-        "Request signature rejected (HTTP 406) — XHS may have changed its web signing. Update redbook: npm i -g @lucasygu/redbook@latest",
+        "Request signature rejected (HTTP 406) — XHS may have changed its web signing. Update redbook: npm i -g github:Kagura-0001/redbook",
         code,
         data,
         res.status

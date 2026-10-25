@@ -8,7 +8,7 @@
 >
 > 把这段话发给你的 AI 助手（Claude Code、Cursor、Codex、Windsurf、OpenClaw 等）：
 >
-> **"帮我用 npm 安装 `@lucasygu/redbook` 这个小红书 CLI 工具，然后运行 `redbook whoami` 验证是否能正常连接。GitHub 地址：https://github.com/lucasygu/redbook"**
+> **"帮我用 `npm install -g github:Kagura-0001/redbook` 安装这个小红书 CLI 工具，然后运行 `redbook whoami` 验证是否能正常连接。GitHub 地址：https://github.com/Kagura-0001/redbook"**
 >
 > OpenClaw 用户也可以直接：**`clawhub install redbook`**
 >
@@ -19,10 +19,10 @@
 ## 安装
 
 ```bash
-npm install -g @lucasygu/redbook
-# 或通过 ClawHub（OpenClaw 生态）
-clawhub install redbook
+npm install -g github:Kagura-0001/redbook
 ```
+
+更新时重新运行同一条命令。
 
 需要 Node.js >= 22。支持 **macOS、Windows、Linux**。使用 Chrome 浏览器的 Cookie —— 请先在 Chrome 中登录 xiaohongshu.com。
 
@@ -307,7 +307,7 @@ npm install -g puppeteer-core marked
 | macOS 钥匙串弹窗 | 输入密码后点击"始终允许"，CLI 需要读取 Chrome 的加密 Cookie |
 | 多个 Chrome 配置文件 | CLI 自动扫描所有配置文件（macOS / Windows / Linux）。如需指定：`--chrome-profile "Profile 1"` |
 | 使用 Brave/Arc 等浏览器 | 尝试 `--cookie-source safari`，或在 Chrome 中登录 |
-| `user` / `user-posts` / `comments` 报 `code=-1`（HTTP 406） | 请求签名被拒绝，通常是小红书更新了网页签名。升级到最新版：`npm i -g @lucasygu/redbook@latest` |
+| `user` / `user-posts` / `comments` 报 `code=-1`（HTTP 406） | 请求签名被拒绝，通常是小红书更新了网页签名。升级到最新版：`npm i -g github:Kagura-0001/redbook` |
 | `search` 报 `-104`（当前登录账号没有权限访问） | 小红书按账号限制接口权限，不是 Cookie 或签名问题。`whoami` / `feed` / `read` 正常、只有 `search` 报 `-104` 时，换一个账号或改用浏览器搜索。新号、未养号的账号，以及高频调用或触发过风控的账号都可能遇到 |
 | 用小红书号（纯数字）查用户失败 | `user` / `user-posts` 需要主页 URL 里 24 位的用户 ID（`/user/profile/<id>`），不是小红书号。直接传完整主页 URL 最稳妥 |
 
@@ -419,7 +419,7 @@ A fast CLI tool for [Xiaohongshu (小红书 / RED)](https://www.xiaohongshu.com)
 >
 > Paste this to your AI coding agent (Claude Code, Cursor, Codex, Windsurf, OpenClaw, etc.):
 >
-> **"Install the `@lucasygu/redbook` Xiaohongshu CLI tool via npm and run `redbook whoami` to verify it works. Repo: https://github.com/lucasygu/redbook"**
+> **"Install the Xiaohongshu CLI with `npm install -g github:Kagura-0001/redbook` and run `redbook whoami` to verify it works. Repo: https://github.com/Kagura-0001/redbook"**
 >
 > OpenClaw users can also run: **`clawhub install redbook`**
 >
@@ -430,10 +430,10 @@ A fast CLI tool for [Xiaohongshu (小红书 / RED)](https://www.xiaohongshu.com)
 ## Install
 
 ```bash
-npm install -g @lucasygu/redbook
-# Or via ClawHub (OpenClaw ecosystem)
-clawhub install redbook
+npm install -g github:Kagura-0001/redbook
 ```
+
+Run the same command again to update.
 
 Requires Node.js >= 22. Supports **macOS, Windows, and Linux**. Uses cookies from your Chrome browser session — you must be logged into xiaohongshu.com in Chrome.
 
@@ -719,7 +719,7 @@ Publishing **frequently triggers captcha** (type=124). Image upload works, but t
 | macOS Keychain prompt | Enter your password and click "Always Allow" — the CLI needs to decrypt Chrome's cookies |
 | Multiple Chrome profiles | The CLI auto-scans all profiles (macOS / Windows / Linux). To pick one: `--chrome-profile "Profile 1"` |
 | Using Brave/Arc/other | Try `--cookie-source safari`, or log into xiaohongshu.com in Chrome |
-| `user` / `user-posts` / `comments` return `code=-1` (HTTP 406) | XHS rejected the request signature, usually after a web signing update. Upgrade: `npm i -g @lucasygu/redbook@latest` |
+| `user` / `user-posts` / `comments` return `code=-1` (HTTP 406) | XHS rejected the request signature, usually after a web signing update. Upgrade: `npm i -g github:Kagura-0001/redbook` |
 | `search` returns `-104` ("no permission for this account") | An account-level API restriction from XHS, not a cookie or signing bug. If `whoami` / `feed` / `read` work but `search` returns `-104`, try another account or search in the browser. New or barely used accounts, and accounts that made heavy API calls or tripped risk control, can both hit this |
 | Looking up a user by Red ID (all digits) fails | `user` / `user-posts` need the 24-character user ID from the profile URL (`/user/profile/<id>`), not the 小红书号. Passing the full profile URL is safest |
 

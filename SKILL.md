@@ -26,7 +26,7 @@ tags:
 
 Use the `redbook` CLI to search notes, read content, analyze creators, automate engagement, and research topics on Xiaohongshu (小红书/RED).
 
-**OpenClaw users:** Install via `clawhub install redbook` or `npm install -g @lucasygu/redbook`.
+**OpenClaw users:** Install via `npm install -g github:Kagura-0001/redbook` (run it again to update).
 
 > **⚠️ Research discipline (read this first).** XHS 风控 throttles *reading*, not just writing. Any research that reads more than a handful of notes MUST run through the **[Research Loop](references/research-loop.md)** — **human-paced by default** (~20 s/note, one at a time; a typical job finishes in tens of minutes, large ones spread across the day). Hammering `read` / `comments` / `analyze-viral` in a tight loop trips captcha / IP block (300012) within a few dozen hits and degrades the account for hours. ⚡ Fast mode is **emergency-only** and requires a printed warning + explicit user opt-in. Never fire reads in parallel or with zero delay.
 

@@ -24,7 +24,7 @@
   "scripts": {
     "build": "tsc && chmod +x dist/cli.js",
     "dev": "tsc --watch",
-    "prepublishOnly": "npm run build",
+    "prepare": "npm run build",
     "postinstall": "node scripts/postinstall.js",
     "preuninstall": "node scripts/preuninstall.js",
     "start": "node dist/cli.js",
