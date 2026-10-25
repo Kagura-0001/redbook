@@ -10,6 +10,10 @@
 
 Both are conditional jobs in `.github/workflows/npm-publish.yml`. Manual trigger via `workflow_dispatch` is also available.
 
+## Fork
+
+This is Kagura-0001's fork of lucasygu/redbook, installed with `npm install -g github:Kagura-0001/redbook` (the `prepare` script builds `dist/` during a git install). When upstream fixes signing or adds endpoints, bring them in with `git fetch upstream && git merge upstream/main`, then push and reinstall. The package keeps the `@lucasygu/redbook` name so a git install replaces the npm one in place.
+
 ## Build & Test
 
 - `npm run build` — TypeScript compile + chmod
