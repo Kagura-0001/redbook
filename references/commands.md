@@ -261,7 +261,7 @@ redbook auth clear --account brand
 
 ### `redbook cooldown`
 
-Show or clear an account's risk-control cooldown. A captcha or IP block puts the account into a 30-minute cooldown during which every command for it fails with `risk_cooldown` (exit 4) without sending requests.
+Show or clear an account's risk-control cooldown. A captcha on a read, or an IP block, puts the account into a 30-minute cooldown during which every command for it fails with `risk_cooldown` (exit 4) without sending requests. A captcha on a write only pauses writes (`write_cooldown`); reads keep working.
 
 ```bash
 redbook cooldown --account brand

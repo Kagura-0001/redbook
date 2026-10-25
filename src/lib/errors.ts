@@ -25,13 +25,13 @@ export class NotLoggedInError extends Error {
 }
 
 export class RiskCooldownError extends Error {
-  constructor(public until: number, public reason: string, account: string) {
+  constructor(public until: number, public reason: string, account: string, public scope: "all" | "write") {
     const left = Math.ceil((until - Date.now()) / 60_000);
     const flag = account === "default" ? "" : ` --account ${account}`;
-    super(
-      `Account "${account}" is cooling down after ${reason} (${left} min left). ` +
-      `Clear the captcha in the browser, then wait or run: redbook cooldown --clear${flag}`
-    );
+    const what = scope === "write"
+      ? `Writes for account "${account}" are paused after ${reason} (${left} min left); reading still works.`
+      : `Account "${account}" is cooling down after ${reason} (${left} min left).`;
+    super(`${what} Clear the captcha in the browser, then wait or run: redbook cooldown --clear${flag}`);
     this.name = "RiskCooldownError";
   }
 }
@@ -42,7 +42,9 @@ export class RiskCooldownError extends Error {
  */
 export function errorInfo(err: unknown): { code: string; exit: number } {
   if (err instanceof NeedVerifyError) return { code: "captcha", exit: 4 };
-  if (err instanceof RiskCooldownError) return { code: "risk_cooldown", exit: 4 };
+  if (err instanceof RiskCooldownError) {
+    return { code: err.scope === "write" ? "write_cooldown" : "risk_cooldown", exit: 4 };
+  }
   if (err instanceof NotLoggedInError) return { code: "not_logged_in", exit: 3 };
   if (err instanceof XhsApiError) {
     if (err.code === 300012) return { code: "ip_blocked", exit: 4 };

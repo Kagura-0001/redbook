@@ -210,7 +210,7 @@ redbook delete "<noteUrl>" --yes
 
 同一个账号的每个请求之间至少间隔约 1 秒，再加随机抖动。间隔记录在磁盘上，所以连续运行多条命令也不会突发请求。GET 请求遇到 429、5xx 或网络错误会退避重试，写操作从不自动重试。
 
-一旦遇到验证码或 IP 封禁（300012），该账号进入 30 分钟冷却：期间所有命令直接以 `risk_cooldown` 失败，不再请求小红书。在浏览器里完成验证后，可以用 `redbook cooldown --account <名称> --clear` 提前解除。
+读取时遇到验证码，或 IP 被封（300012），该账号进入 30 分钟冷却：期间所有命令直接以 `risk_cooldown` 失败，不再请求小红书。发帖、评论等写操作遇到验证码（发帖时很常见）只暂停写操作 30 分钟（`write_cooldown`），读取不受影响。在浏览器里完成验证后，可以用 `redbook cooldown --account <名称> --clear` 提前解除。
 
 ### 退出码
 
@@ -219,7 +219,7 @@ redbook delete "<noteUrl>" --yes
 | 0 | — | 成功 |
 | 1 | `missing_xsec_token`、`signature_rejected`、`api_error`、`error` | 输入有误、签名过期或其他错误 |
 | 3 | `not_logged_in`、`no_permission` | 需要重新登录，或账号没有该接口权限（-104） |
-| 4 | `captcha`、`ip_blocked`、`risk_cooldown` | 触发风控，应停止操作 |
+| 4 | `captcha`、`ip_blocked`、`risk_cooldown`、`write_cooldown` | 触发风控，应停止操作（`write_cooldown` 时读取仍可用） |
 
 ### 用户主页选项
 
@@ -622,7 +622,7 @@ redbook delete "<noteUrl>" --yes
 
 Requests of one account are spaced at least ~1 s apart plus random jitter. The timing lives on disk, so back-to-back commands can't burst either. GETs retry with backoff on 429/5xx/network errors; writes are never retried.
 
-After a captcha or an IP block (300012) the account enters a 30-minute cooldown: every command for it fails fast with `risk_cooldown` and sends nothing. Once the captcha is solved in the browser, `redbook cooldown --account <name> --clear` ends it early.
+After a captcha on a read, or an IP block (300012), the account enters a 30-minute cooldown: every command for it fails fast with `risk_cooldown` and sends nothing. A captcha on a write (common when publishing) only pauses writes for 30 minutes (`write_cooldown`); reads keep working. Once the captcha is solved in the browser, `redbook cooldown --account <name> --clear` ends it early.
 
 ### Exit Codes
 
@@ -631,7 +631,7 @@ After a captcha or an IP block (300012) the account enters a 30-minute cooldown:
 | 0 | — | Success |
 | 1 | `missing_xsec_token`, `signature_rejected`, `api_error`, `error` | Bad input, outdated signing, or another error |
 | 3 | `not_logged_in`, `no_permission` | Log in again, or the account lacks access to the endpoint (-104) |
-| 4 | `captcha`, `ip_blocked`, `risk_cooldown` | Risk control — stop |
+| 4 | `captcha`, `ip_blocked`, `risk_cooldown`, `write_cooldown` | Risk control — stop (reads still work under `write_cooldown`) |
 
 ### User Profile Options
 
