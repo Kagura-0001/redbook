@@ -13,7 +13,6 @@
  */
 
 import crypto from "node:crypto";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import kleur from "kleur";
@@ -24,9 +23,9 @@ import {
   type CookieSource,
 } from "./cookies.js";
 import { XhsClient } from "./client.js";
+import { redbookHome } from "./accounts.js";
 
-const CACHE_DIR = join(homedir(), ".redbook");
-const CACHE_FILE = join(CACHE_DIR, "platform-cache.json");
+const cacheFile = () => join(redbookHome(), "platform-cache.json");
 
 interface DetectResult {
   /** Resolved platform config to use. */
@@ -64,7 +63,7 @@ function looksGuest(c: XhsCookies | null): boolean {
 
 function readCache(): CacheEntry | null {
   try {
-    return JSON.parse(readFileSync(CACHE_FILE, "utf-8")) as CacheEntry;
+    return JSON.parse(readFileSync(cacheFile(), "utf-8")) as CacheEntry;
   } catch {
     return null;
   }
@@ -72,13 +71,13 @@ function readCache(): CacheEntry | null {
 
 function writeCache(platform: PlatformId, cookies: XhsCookies): void {
   try {
-    mkdirSync(CACHE_DIR, { recursive: true });
+    mkdirSync(redbookHome(), { recursive: true });
     const entry: CacheEntry = {
       platform,
       fingerprint: fingerprint(cookies),
       detectedAt: new Date().toISOString(),
     };
-    writeFileSync(CACHE_FILE, JSON.stringify(entry, null, 2));
+    writeFileSync(cacheFile(), JSON.stringify(entry, null, 2));
   } catch {
     // cache is best-effort — never fail a command over it
   }

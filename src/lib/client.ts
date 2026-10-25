@@ -9,28 +9,11 @@ import { signMainApi, USER_AGENT, buildGetUri, extractUri, type SignFormat } fro
 import { signCreator } from "./creator-signing.js";
 import { cookiesToString, type XhsCookies } from "./cookies.js";
 import { PLATFORMS, type PlatformConfig } from "./platform.js";
+import { XhsApiError, NeedVerifyError } from "./errors.js";
+import { DEFAULT_ACCOUNT } from "./accounts.js";
+import { MIN_GAP_MS, pace, startCooldown } from "./pace.js";
 
-export class XhsApiError extends Error {
-  constructor(
-    message: string,
-    public code?: number | string,
-    public response?: unknown,
-    public status?: number
-  ) {
-    super(message);
-    this.name = "XhsApiError";
-  }
-}
-
-export class NeedVerifyError extends XhsApiError {
-  constructor(
-    public verifyType: string,
-    public verifyUuid: string
-  ) {
-    super(`Captcha required: type=${verifyType}, uuid=${verifyUuid}`);
-    this.name = "NeedVerifyError";
-  }
-}
+export { XhsApiError, NeedVerifyError };
 
 export interface UserPageRequestOptions {
   xsecToken?: string | null;
@@ -40,10 +23,15 @@ export interface UserPageRequestOptions {
 export class XhsClient {
   private cookies: XhsCookies;
   private platform: PlatformConfig;
+  /** Name used for pacing and cooldown state. */
+  readonly account: string;
+  /** Minimum gap between two requests of this account, across processes. */
+  minGapMs = MIN_GAP_MS;
 
-  constructor(cookies: XhsCookies, platform: PlatformConfig = PLATFORMS.xhs) {
+  constructor(cookies: XhsCookies, platform: PlatformConfig = PLATFORMS.xhs, account: string = DEFAULT_ACCOUNT) {
     this.cookies = cookies;
     this.platform = platform;
+    this.account = account;
   }
 
   /** Which backend this client talks to ("xhs" | "rednote"). */
@@ -66,13 +54,33 @@ export class XhsClient {
     };
   }
 
+  // Every request waits for this account's turn. GETs are retried on 429, 5xx
+  // and network errors; writes never are, so a timeout can't double-post.
+  private async send(url: string, init: RequestInit): Promise<Response> {
+    const attempts = init.method === "GET" ? 3 : 1;
+    for (let attempt = 1; ; attempt++) {
+      await pace(this.account, this.minGapMs);
+      let res: Response;
+      try {
+        res = await fetch(url, init);
+      } catch (err) {
+        if (attempt === attempts) throw err;
+        await backoff(attempt);
+        continue;
+      }
+      if (attempt === attempts || (res.status !== 429 && res.status < 500)) return res;
+      await res.text();
+      await backoff(attempt);
+    }
+  }
+
   private async mainApiGet(
     uri: string,
     params?: Record<string, string | number | string[]>
   ): Promise<unknown> {
     const fullUri = buildGetUri(uri, params);
     const url = `${this.platform.edithHost}${fullUri}`;
-    const send = (signFormat: SignFormat) => fetch(url, {
+    const send = (signFormat: SignFormat) => this.send(url, {
       method: "GET",
       headers: {
         ...this.baseHeaders(),
@@ -97,7 +105,7 @@ export class XhsClient {
     const signHeaders = signMainApi("POST", uri, this.cookies, undefined, data, undefined, this.platform.signLocation);
     const url = `${this.platform.edithHost}${uri}`;
 
-    const res = await fetch(url, {
+    const res = await this.send(url, {
       method: "POST",
       headers: { ...this.baseHeaders(), ...signHeaders },
       body: JSON.stringify(data),
@@ -129,7 +137,7 @@ export class XhsClient {
       : uri;
 
     const host = this.creatorHost(uri);
-    const res = await fetch(`${host}${fullUri}`, {
+    const res = await this.send(`${host}${fullUri}`, {
       method: "GET",
       headers: {
         ...this.baseHeaders(),
@@ -150,7 +158,7 @@ export class XhsClient {
     const sign = signCreator(`url=${uri}`, data, this.cookies.a1);
 
     const host = this.creatorHost(uri);
-    const res = await fetch(`${host}${uri}`, {
+    const res = await this.send(`${host}${uri}`, {
       method: "POST",
       headers: {
         ...this.baseHeaders(),
@@ -167,6 +175,7 @@ export class XhsClient {
 
   private async handleResponse(res: Response): Promise<unknown> {
     if (res.status === 461 || res.status === 471) {
+      startCooldown(this.account, "a captcha");
       throw new NeedVerifyError(
         res.headers.get("verifytype") ?? "unknown",
         res.headers.get("verifyuuid") ?? "unknown"
@@ -211,6 +220,7 @@ export class XhsClient {
       );
     }
     if (code === 300012) {
+      startCooldown(this.account, "an IP block");
       throw new XhsApiError("IP blocked by XHS", code, data);
     }
     if (code === 300015) {
@@ -463,7 +473,8 @@ export class XhsClient {
     xsecToken: string
   ): Promise<unknown> {
     const url = `${this.platform.homeUrl}/explore/${noteId}?xsec_token=${xsecToken}&xsec_source=pc_feed`;
-    const res = await fetch(url, {
+    const res = await this.send(url, {
+      method: "GET",
       headers: {
         "user-agent": USER_AGENT,
         referer: `${this.platform.homeUrl}/`,
@@ -534,7 +545,8 @@ export class XhsClient {
     boardId: string
   ): Promise<unknown> {
     const url = `${this.platform.homeUrl}/board/${boardId}`;
-    const res = await fetch(url, {
+    const res = await this.send(url, {
+      method: "GET",
       headers: {
         "user-agent": USER_AGENT,
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -658,7 +670,7 @@ export class XhsClient {
     const fileData = fs.readFileSync(filePath);
     const url = `${this.platform.uploadHost}/${fileId}`;
 
-    const res = await fetch(url, {
+    const res = await this.send(url, {
       method: "PUT",
       headers: {
         "X-Cos-Security-Token": token,
@@ -745,6 +757,11 @@ export class XhsClient {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function backoff(attempt: number): Promise<void> {
+  const ms = 1000 * 2 ** (attempt - 1) + Math.random() * 1000;
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function generateSearchId(): string {
   const e = BigInt(Date.now()) << 64n;
