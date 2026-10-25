@@ -18,6 +18,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { extractCookies, type CookieSource, type XhsCookies } from "./lib/cookies.js";
+import type { WindowCookie } from "./lib/browser.js";
 import { resolvePlatform, type PlatformConfig } from "./lib/platform.js";
 import { detectPlatform, detectPlatformForCookies } from "./lib/detect.js";
 import { XhsClient } from "./lib/client.js";
@@ -121,7 +122,14 @@ function addUserPageOptions(cmd: Command): Command {
  * account file, then the local browser. A named --account only ever uses its
  * own file: falling back to the browser could act as whoever is logged in there.
  */
-async function getClient(opts: Opts): Promise<XhsClient> {
+interface Login {
+  cookies: XhsCookies;
+  platform: PlatformConfig;
+  account: string;
+  fromBrowser: boolean;
+}
+
+async function resolveLogin(opts: Opts): Promise<Login> {
   const explicit = (opts.global ? "rednote" : opts.platform) || process.env.REDBOOK_PLATFORM;
   const account: string | undefined = opts.account ?? process.env.REDBOOK_ACCOUNT;
   const cookieString = opts.cookieString || process.env.REDBOOK_COOKIE_STRING;
@@ -131,7 +139,7 @@ async function getClient(opts: Opts): Promise<XhsClient> {
     const cookies = parseManualCookies(cookieString, source);
     log(`Using ${source}.`);
     const platform = explicit ? resolvePlatform(explicit) : await detectPlatformForCookies(cookies);
-    return new XhsClient(cookies, platform, account ?? DEFAULT_ACCOUNT);
+    return { cookies, platform, account: account ?? DEFAULT_ACCOUNT, fromBrowser: false };
   }
 
   const path = cookieFilePath({ account });
@@ -144,20 +152,27 @@ async function getClient(opts: Opts): Promise<XhsClient> {
     }
     const saved = loadCookieFile(path);
     log(`Using account "${saved.account}" (${saved.path}).`);
-    return new XhsClient(saved.cookies, resolvePlatform(explicit || saved.platform), saved.account);
+    const platform = resolvePlatform(explicit || saved.platform);
+    return { cookies: saved.cookies, platform, account: saved.account, fromBrowser: false };
   }
 
   const source = opts.cookieSource as CookieSource;
   if (explicit) {
     const platform = resolvePlatform(explicit);
-    return new XhsClient(await extractCookies(source, opts.chromeProfile, platform.cookieUrl), platform);
+    const cookies = await extractCookies(source, opts.chromeProfile, platform.cookieUrl);
+    return { cookies, platform, account: DEFAULT_ACCOUNT, fromBrowser: true };
   }
 
   // Use whichever of xiaohongshu.com / rednote.com the browser is logged into.
   const detected = await detectPlatform(source, opts.chromeProfile);
   const cookies = detected.cookies
     ?? await extractCookies(source, opts.chromeProfile, detected.platform.cookieUrl);
-  return new XhsClient(cookies, detected.platform);
+  return { cookies, platform: detected.platform, account: DEFAULT_ACCOUNT, fromBrowser: true };
+}
+
+async function getClient(opts: Opts): Promise<XhsClient> {
+  const login = await resolveLogin(opts);
+  return new XhsClient(login.cookies, login.platform, login.account);
 }
 
 async function run(opts: Opts, body: () => Promise<void>): Promise<void> {
@@ -1071,6 +1086,71 @@ apiCommand("batch-reply <url>", "Reply to multiple comments using a strategy")
       console.log(kleur.red(`${failed.length} failed`));
       for (const r of failed) console.log(kleur.dim(`  @${r.author}: ${r.error}`));
     }
+  }));
+
+// ─── browser / draft ─────────────────────────────────────────────────────────
+
+/** Login cookies for redbook's window: the site-wide ones, plus creator-center ones from the browser. */
+async function windowCookies(opts: Opts, login: Login): Promise<WindowCookie[]> {
+  const site = new URL(login.platform.homeUrl).hostname.replace(/^www/, "");
+  const cookies = Object.entries(login.cookies).map(([name, value]) => ({ name, value, domain: site }));
+  if (login.fromBrowser) {
+    const creatorHost = new URL(login.platform.creatorHost).hostname;
+    const creator = await extractCookies(opts.cookieSource as CookieSource, opts.chromeProfile, `https://${creatorHost}/`)
+      .catch(() => ({} as XhsCookies));
+    for (const [name, value] of Object.entries(creator)) {
+      if (login.cookies[name] !== value) cookies.push({ name, value, domain: creatorHost });
+    }
+  }
+  return cookies;
+}
+
+/**
+ * Open the creator center's publish page in redbook's window. If the window isn't logged in,
+ * copy the login over from cookies (same session, nobody gets logged out); if
+ * that isn't enough, leave the login page up for a QR scan.
+ */
+async function openCreator(opts: Opts) {
+  const { openWindow, setCookies } = await import("./lib/browser.js");
+  const { openPublishPage, publishUrl } = await import("./lib/creator.js");
+  const explicit = (opts.global ? "rednote" : opts.platform) || process.env.REDBOOK_PLATFORM;
+  const target = publishUrl(resolvePlatform(explicit).creatorHost);
+
+  const browser = await openWindow(opts.account ?? process.env.REDBOOK_ACCOUNT ?? DEFAULT_ACCOUNT);
+  const page = await browser.newPage();
+  if (await openPublishPage(page, target) === "login") {
+    log("redbook's window isn't logged in; copying the login over...");
+    await setCookies(browser, await windowCookies(opts, await resolveLogin(opts)));
+    if (await openPublishPage(page, target) === "login") {
+      await browser.disconnect();
+      throw new NotLoggedInError("Log in to the creator center in redbook's window (scan the QR code there), then run this again.");
+    }
+  }
+  return { browser, page };
+}
+
+apiCommand("browser", "Open the creator center's publish page in redbook's own Chrome window (it stays open)")
+  .action((opts) => run(opts, async () => {
+    const { browser, page } = await openCreator(opts);
+    await page.bringToFront();
+    await browser.disconnect();
+    console.log(kleur.green("Opened the creator center in redbook's window."));
+  }));
+
+apiCommand("draft <dir>", "Fill the publish form with a note (post.md + images/) in redbook's window; you press 发布")
+  .action((dir: string, opts) => run(opts, async () => {
+    const { readNote } = await import("./lib/note.js");
+    const { fillImageNote } = await import("./lib/creator.js");
+    const note = readNote(dir);
+    const { browser, page } = await openCreator(opts);
+    try {
+      await fillImageNote(page, note, log);
+    } finally {
+      await browser.disconnect();
+    }
+    const result = { filled: true, title: note.title, images: note.images.length, topics: note.topics };
+    if (opts.json) return output(result, true);
+    console.log(kleur.green("Filled in. Check the post in redbook's window and press 发布 when it looks right."));
   }));
 
 // ─── render ──────────────────────────────────────────────────────────────────

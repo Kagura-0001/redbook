@@ -69,7 +69,9 @@ Use the `redbook` CLI to search notes, read content, analyze creators, automate 
 | List album notes | `redbook board <board-url>` or `redbook board <boardId> --json` |
 | Render markdown to cards | `redbook render content.md --style xiaohongshu` |
 | Write a post or comment | read [references/writing.md](references/writing.md) first |
-| Publish image note | `redbook post --title "..." --body "..." --images img.jpg --topic 话题 --private` |
+| Fill the publish form for the user to post | `redbook draft <note-dir>` (opens redbook's Chrome window; the user presses 发布) |
+| Open the creator center in redbook's window | `redbook browser` |
+| Publish through the API (captcha-prone) | `redbook post --title "..." --body "..." --images img.jpg --topic 话题 --private` |
 | Check connection | `redbook whoami` |
 | Save cookies for cloud/OpenClaw | `redbook auth export` or `redbook auth save --cookie-string "a1=...; web_session=..."` |
 | Save another account | `redbook auth export --account <name> --chrome-profile "Profile 2"` |
@@ -170,7 +172,7 @@ The following operations work reliably via API:
 - **Analysis**: viral scoring, template extraction, batch reply planning
 
 The following operations are unreliable via API (frequently trigger captcha):
-- Publishing notes (use `--private` for higher success rate)
+- Publishing notes through the API (`post`). Use `redbook draft` instead: it fills the real creator center form in a browser window and the user presses 发布
 - Bulk operations at very high frequency
 
 The following operations require browser automation (not supported by this CLI):
@@ -252,4 +254,4 @@ const topics = await client.searchTopics("Claude Code");
 - Node.js >= 22
 - Logged into xiaohongshu.com in Chrome (or Safari/Firefox with `--cookie-source`)
 - macOS (cookie extraction uses native keychain access)
-- **For card rendering only:** `puppeteer-core` and `marked` (`npm install -g puppeteer-core marked`). Uses your existing Chrome — no additional browser download.
+- Google Chrome, for `render` and `draft`. redbook drives your installed Chrome; no extra browser download.

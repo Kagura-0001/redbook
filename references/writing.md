@@ -39,5 +39,5 @@ Keep these notes next to the draft:
 ## 5. Cards and publishing
 
 - `redbook render post.md --pagination separator` with frontmatter `emoji`, `title`, `subtitle`, and `---` between cards. Cover titles wrap at about 10 CJK characters at the default 1080 px width; arrange the title so the break falls at punctuation. Use U+2011 for hyphens that shouldn't wrap (Real‑Time).
-- Publishing through the API often draws a captcha (type 124), which pauses writes for 30 minutes. For the post itself, prefer the creator web at creator.xiaohongshu.com/publish: hand the user a `body-web.txt` with stickers swapped for emoji (or inserted from the panel) and let them add topics in the editor.
-- From the CLI: `redbook post ... --topic 话题一 话题二 --private`, with the topics written in the body as `#话题一[话题]# #话题二[话题]#`.
+- Publish with `redbook draft <note-dir>`: it fills the creator center form in redbook's Chrome window and the user presses 发布 after a last look. Write stickers in post.md as emoji (the web editor doesn't turn `[哭惹R]` codes into stickers) and list topics in the frontmatter, not the body.
+- `redbook post` publishes through the API and often draws a captcha (type 124), which pauses writes for 30 minutes. Keep it for cases where no browser is available.

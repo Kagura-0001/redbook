@@ -107,7 +107,7 @@ redbook board abc123 --json
 redbook health
 redbook health --all --json
 
-# 将 Markdown 渲染为图文卡片（需要可选依赖）
+# 将 Markdown 渲染为图文卡片
 redbook render content.md --style xiaohongshu
 redbook render content.md --style dark --output-dir ./cards
 
@@ -128,7 +128,9 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `user-posts <userId\|profileUrl>` | 列出用户所有笔记 |
 | `account-report <user...>` | 批量统计账号发帖和互动数据 |
 | `feed` | 获取推荐页内容 |
-| `post` | 发布图文笔记（易触发验证码，详见下方说明） |
+| `draft <笔记目录>` | 在 redbook 的 Chrome 窗口里填好发布表单，由你点"发布"（推荐） |
+| `browser` | 在 redbook 的 Chrome 窗口里打开创作中心 |
+| `post` | 通过接口发布图文笔记（易触发验证码，详见下方说明） |
 | `topics <关键词>` | 搜索话题/标签 |
 | `favorites [userId]` | 查看收藏笔记列表（默认当前用户） |
 | `collect <url>` | 收藏（书签）笔记 |
@@ -141,7 +143,7 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `comment <url>` | 发表评论 |
 | `reply <url>` | 回复指定评论 |
 | `batch-reply <url>` | 按策略批量回复评论（支持预览模式） |
-| `render <文件>` | Markdown 渲染为小红书图文卡片 PNG（需可选依赖） |
+| `render <文件>` | Markdown 渲染为小红书图文卡片 PNG |
 | `auth` | 保存、导出、列出账号的 Cookie 文件（多账号、云端/OpenClaw） |
 | `cooldown` | 查看或解除账号的风控冷却 |
 
@@ -280,14 +282,19 @@ redbook account-report "<profileUrl1>" "<profileUrl2>" --max-pages 2 --json
 | `--height <像素>` | 卡片高度 | `1440` |
 | `--dpr <倍率>` | 设备像素比 | `2` |
 
-**可选依赖：** 需要安装 `puppeteer-core` 和 `marked`：
-```bash
-npm install -g puppeteer-core marked
-```
+使用本机的 Chrome 渲染，不需要额外下载浏览器。
 
 ### 发布选项（post）
 
-发布功能目前**容易触发验证码**（type=124）。图片上传正常，但发布步骤经常被拦截。如需发布笔记，建议使用浏览器自动化。
+通过接口发布**容易触发验证码**（type=124）。图片上传正常，但发布步骤经常被拦截。推荐用 `redbook draft`：
+
+```bash
+redbook draft notes/2026-10-25-streaming-bench
+```
+
+它在 redbook 自己的 Chrome 窗口（独立配置，位于 `~/.redbook/chrome/`，命令结束后不关闭）里打开创作中心，上传 `images/` 里的图，填好 `post.md` 的标题、正文和话题，然后停下，由你检查后点"发布"。窗口没登录时会从你的浏览器复制登录状态（同一个会话，不会把谁踢下线），不行再在窗口里扫码。笔记目录格式见 [references/commands.md](references/commands.md)。
+
+`post` 的选项：
 
 | 选项 | 说明 |
 |------|------|
@@ -517,7 +524,7 @@ redbook board "https://www.xiaohongshu.com/board/abc123" --json
 redbook health
 redbook health --all --json
 
-# Render markdown to image cards (requires optional deps)
+# Render markdown to image cards
 redbook render content.md --style xiaohongshu
 redbook render content.md --style dark --output-dir ./cards
 
@@ -538,7 +545,9 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `user-posts <userId\|profileUrl>` | List a user's posted notes |
 | `account-report <user...>` | Batch summarize account posting and engagement |
 | `feed` | Get homepage feed |
-| `post` | Publish an image note (captcha-prone, see below) |
+| `draft <note-dir>` | Fill the publish form in redbook's Chrome window; you press 发布 (recommended) |
+| `browser` | Open the creator center in redbook's Chrome window |
+| `post` | Publish an image note through the API (captcha-prone, see below) |
 | `topics <keyword>` | Search for topics/hashtags |
 | `favorites [userId]` | List collected/favorited notes (defaults to current user) |
 | `collect <url>` | Collect (bookmark) a note |
@@ -551,7 +560,7 @@ redbook post --title "测试" --body "..." --images img.png --private
 | `comment <url>` | Post a top-level comment |
 | `reply <url>` | Reply to a specific comment |
 | `batch-reply <url>` | Batch reply to comments with filtering strategy (supports dry-run) |
-| `render <file>` | Render markdown to styled PNG image cards for XHS posts (optional deps) |
+| `render <file>` | Render markdown to styled PNG image cards for XHS posts |
 | `auth` | Save, export, list, inspect, and clear account cookie files (multiple accounts, cloud/OpenClaw) |
 | `cooldown` | Show or clear an account's risk-control cooldown |
 
@@ -692,14 +701,19 @@ Render a markdown file to styled PNG image cards. Uses your existing Chrome for 
 | `--height <n>` | Card height in pixels | `1440` |
 | `--dpr <n>` | Device pixel ratio | `2` |
 
-**Optional dependencies:** Requires `puppeteer-core` and `marked`:
-```bash
-npm install -g puppeteer-core marked
-```
+Rendering uses your installed Chrome; nothing extra to download.
 
 ### Post Options
 
-Publishing **frequently triggers captcha** (type=124). Image upload works, but the publish step is unreliable. For posting, consider using browser automation instead.
+Publishing through the API **frequently triggers captcha** (type=124). Image upload works, but the publish step is unreliable. Use `redbook draft` instead:
+
+```bash
+redbook draft notes/2026-10-25-streaming-bench
+```
+
+It opens the creator center in redbook's own Chrome window (its own profile under `~/.redbook/chrome/`, left open afterwards), uploads the images in `images/`, fills the title, body and topics from `post.md`, and stops so you can check it and press 发布. If the window isn't logged in, it copies the login from your browser (same session, nobody gets logged out), and otherwise waits for a QR scan in the window. The note directory format is in [references/commands.md](references/commands.md).
+
+`post` options:
 
 | Option | Description |
 |--------|-------------|
