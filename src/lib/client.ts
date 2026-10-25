@@ -11,7 +11,7 @@ import { cookiesToString, type XhsCookies } from "./cookies.js";
 import { PLATFORMS, type PlatformConfig } from "./platform.js";
 import { XhsApiError, NeedVerifyError } from "./errors.js";
 import { DEFAULT_ACCOUNT } from "./accounts.js";
-import { MIN_GAP_MS, pace, startCooldown } from "./pace.js";
+import { MIN_GAP_MS, pace, startCooldown, type Scope } from "./pace.js";
 
 export { XhsApiError, NeedVerifyError };
 
@@ -56,10 +56,10 @@ export class XhsClient {
 
   // Every request waits for this account's turn. GETs are retried on 429, 5xx
   // and network errors; writes never are, so a timeout can't double-post.
-  private async send(url: string, init: RequestInit): Promise<Response> {
+  private async send(url: string, init: RequestInit, scope: Scope = "read"): Promise<Response> {
     const attempts = init.method === "GET" ? 3 : 1;
     for (let attempt = 1; ; attempt++) {
-      await pace(this.account, this.minGapMs);
+      await pace(this.account, this.minGapMs, scope);
       let res: Response;
       try {
         res = await fetch(url, init);
@@ -100,7 +100,8 @@ export class XhsClient {
 
   private async mainApiPost(
     uri: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
+    scope: Scope = "read"
   ): Promise<unknown> {
     const signHeaders = signMainApi("POST", uri, this.cookies, undefined, data, undefined, this.platform.signLocation);
     const url = `${this.platform.edithHost}${uri}`;
@@ -109,9 +110,9 @@ export class XhsClient {
       method: "POST",
       headers: { ...this.baseHeaders(), ...signHeaders },
       body: JSON.stringify(data),
-    });
+    }, scope);
 
-    return this.handleResponse(res);
+    return this.handleResponse(res, scope);
   }
 
   // /web_api/ endpoints → edith host; /api/galaxy/ → creator host
@@ -121,7 +122,8 @@ export class XhsClient {
 
   private async creatorGet(
     uri: string,
-    params?: Record<string, string | number>
+    params?: Record<string, string | number>,
+    scope: Scope = "read"
   ): Promise<unknown> {
     let apiStr = `url=${uri}`;
     if (params) {
@@ -146,14 +148,15 @@ export class XhsClient {
         origin: this.platform.creatorHost,
         referer: `${this.platform.creatorHost}/`,
       },
-    });
+    }, scope);
 
-    return this.handleResponse(res);
+    return this.handleResponse(res, scope);
   }
 
   private async creatorPost(
     uri: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
+    scope: Scope = "read"
   ): Promise<unknown> {
     const sign = signCreator(`url=${uri}`, data, this.cookies.a1);
 
@@ -168,14 +171,16 @@ export class XhsClient {
         referer: `${this.platform.creatorHost}/`,
       },
       body: JSON.stringify(data),
-    });
+    }, scope);
 
-    return this.handleResponse(res);
+    return this.handleResponse(res, scope);
   }
 
-  private async handleResponse(res: Response): Promise<unknown> {
+  // A captcha on a write only pauses writes (publishing draws them often);
+  // a captcha on a read, or an IP block, pauses the whole account.
+  private async handleResponse(res: Response, scope: Scope = "read"): Promise<unknown> {
     if (res.status === 461 || res.status === 471) {
-      startCooldown(this.account, "a captcha");
+      startCooldown(this.account, "a captcha", scope === "write" ? "write" : "all");
       throw new NeedVerifyError(
         res.headers.get("verifytype") ?? "unknown",
         res.headers.get("verifyuuid") ?? "unknown"
@@ -379,13 +384,13 @@ export class XhsClient {
   async collectNote(noteId: string): Promise<unknown> {
     return this.mainApiPost("/api/sns/web/v1/note/collect", {
       note_id: noteId,
-    });
+    }, "write");
   }
 
   async uncollectNote(noteId: string): Promise<unknown> {
     return this.mainApiPost("/api/sns/web/v1/note/uncollect", {
       note_ids: noteId,
-    });
+    }, "write");
   }
 
   // ─── Like / Unlike Endpoints ─────────────────────────────────────────
@@ -393,13 +398,13 @@ export class XhsClient {
   async likeNote(noteId: string): Promise<unknown> {
     return this.mainApiPost("/api/sns/web/v1/note/like", {
       note_oid: noteId,
-    });
+    }, "write");
   }
 
   async unlikeNote(noteId: string): Promise<unknown> {
     return this.mainApiPost("/api/sns/web/v1/note/dislike", {
       note_oid: noteId,
-    });
+    }, "write");
   }
 
   // ─── Follow Endpoints ────────────────────────────────────────────────
@@ -425,7 +430,7 @@ export class XhsClient {
   async deleteNote(noteId: string): Promise<unknown> {
     return this.creatorPost("/api/galaxy/creator/note/delete", {
       note_id: noteId,
-    });
+    }, "write");
   }
 
   async getSubComments(
@@ -450,7 +455,7 @@ export class XhsClient {
       note_id: noteId,
       content,
       at_users: [],
-    });
+    }, "write");
   }
 
   async replyComment(
@@ -463,7 +468,7 @@ export class XhsClient {
       content,
       target_comment_id: targetCommentId,
       at_users: [],
-    });
+    }, "write");
   }
 
   // ─── HTML Fallback ────────────────────────────────────────────────────
@@ -654,7 +659,7 @@ export class XhsClient {
       file_count: count,
       version: 1,
       source: "web",
-    })) as { uploadTempPermits: Array<{ fileIds: string[]; token: string }> };
+    }, "write")) as { uploadTempPermits: Array<{ fileIds: string[]; token: string }> };
 
     const permit = data.uploadTempPermits[0];
     return { fileId: permit.fileIds[0], token: permit.token };
@@ -677,7 +682,7 @@ export class XhsClient {
         "Content-Type": contentType,
       },
       body: fileData,
-    });
+    }, "write");
 
     if (!res.ok) {
       throw new XhsApiError(`Upload failed: ${res.status} ${res.statusText}`);
@@ -725,7 +730,7 @@ export class XhsClient {
       video_info: null,
     };
 
-    return this.creatorPost("/web_api/sns/v2/note", data);
+    return this.creatorPost("/web_api/sns/v2/note", data, "write");
   }
 
   async searchTopics(keyword: string): Promise<unknown> {

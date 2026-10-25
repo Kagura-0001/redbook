@@ -309,12 +309,19 @@ async function saveAccount(
   return saveCookieFile(path, cookies, platform.id, { id: String(me.user_id), nickname: String(me.nickname ?? "") });
 }
 
+function cooldownNote(status: ReturnType<typeof cooldownStatus>): string | null {
+  const time = (until: number) => new Date(until).toLocaleTimeString();
+  if (status.cooldown) return `cooling down after ${status.cooldown.reason} until ${time(status.cooldown.until)}`;
+  if (status.writeCooldown) return `writes paused after ${status.writeCooldown.reason} until ${time(status.writeCooldown.until)}`;
+  return null;
+}
+
 authCmd
   .command("list")
   .description("List saved accounts")
   .option("--json", "Output as JSON")
   .action((opts) => run(opts, async () => {
-    const accounts = listAccounts().map((a) => ({ ...accountSummary(a), cooldown: cooldownStatus(a.account) }));
+    const accounts = listAccounts().map((a) => ({ ...accountSummary(a), ...cooldownStatus(a.account) }));
     if (opts.json) return output(accounts, true);
     if (accounts.length === 0) {
       console.log("No saved accounts. Save one with: redbook auth export --account <name>");
@@ -322,10 +329,8 @@ authCmd
     }
     for (const a of accounts) {
       const who = a.user ? `${a.user.nickname}  ${kleur.dim(a.user.id)}` : kleur.dim("(user unknown)");
-      const cooling = a.cooldown
-        ? kleur.yellow(`  cooling down until ${new Date(a.cooldown.until).toLocaleTimeString()}`)
-        : "";
-      console.log(`${kleur.bold(a.account.padEnd(12))} ${who}  ${kleur.dim(a.platform ?? "")}${cooling}`);
+      const note = cooldownNote(a);
+      console.log(`${kleur.bold(a.account.padEnd(12))} ${who}  ${kleur.dim(a.platform ?? "")}${note ? kleur.yellow(`  ${note}`) : ""}`);
     }
   }));
 
@@ -407,7 +412,7 @@ authCmd
 
 program
   .command("cooldown")
-  .description("Show or clear an account's risk-control cooldown (set after a captcha or IP block)")
+  .description("Show or clear an account's risk-control cooldown (all requests after a read captcha or IP block, writes only after a write captcha)")
   .option("--account <name>", "Account name")
   .option("--clear", "End the cooldown now")
   .option("--json", "Output as JSON")
@@ -415,11 +420,9 @@ program
     const account = opts.account ?? process.env.REDBOOK_ACCOUNT ?? DEFAULT_ACCOUNT;
     if (opts.clear) clearCooldown(account);
     const status = cooldownStatus(account);
-    if (opts.json) return output({ account, cooldown: status }, true);
-    if (!status) console.log(kleur.green(`Account "${account}" is not cooling down.`));
-    else console.log(kleur.yellow(
-      `Account "${account}" is cooling down after ${status.reason} until ${new Date(status.until).toLocaleTimeString()}.`
-    ));
+    if (opts.json) return output({ account, ...status }, true);
+    const note = cooldownNote(status);
+    console.log(note ? kleur.yellow(`Account "${account}": ${note}.`) : kleur.green(`Account "${account}" is not cooling down.`));
   }));
 
 // ─── search ─────────────────────────────────────────────────────────────────
@@ -634,8 +637,15 @@ async function publishNote(client: XhsClient, opts: Opts): Promise<Rec> {
     log(`Uploaded ${path}`);
   }
 
-  const topics = opts.topic ? topicList(await client.searchTopics(opts.topic)).slice(0, 1) : [];
-  if (topics[0]) log(`Topic: #${topics[0].name}`);
+  // Prefer the topic whose name matches the keyword exactly; write it in the
+  // body as "#name[话题]#" so the app links it.
+  const topics: Topic[] = [];
+  for (const keyword of (opts.topic as string[] | undefined) ?? []) {
+    const found = topicList(await client.searchTopics(keyword));
+    const topic = found.find((t) => t.name === keyword) ?? found[0];
+    if (topic) topics.push(topic);
+  }
+  if (topics.length > 0) log(`Topics: ${topics.map((t) => `#${t.name}`).join(" ")}`);
 
   log("Publishing note...");
   const result = (await client.createImageNote(opts.title, opts.body, fileIds, {
@@ -652,7 +662,7 @@ writeCommand("post", "Publish an image note")
   .requiredOption("--title <title>", "Note title")
   .requiredOption("--body <body>", "Note body text")
   .requiredOption("--images <paths...>", "Image file paths")
-  .option("--topic <keyword>", "Topic/hashtag keyword to search and attach")
+  .option("--topic <keywords...>", "Topics to search and attach; write them in the body as #name[话题]#")
   .option("--private", "Publish as private note")
   .action(withClient(async (client, opts) => {
     const images = opts.images as string[];
@@ -664,7 +674,7 @@ writeCommand("post", "Publish an image note")
       title: opts.title,
       body: opts.body,
       images,
-      topic: opts.topic ?? null,
+      topics: opts.topic ?? [],
       private: Boolean(opts.private),
     };
     await write(client, opts, plan, () => publishNote(client, opts), (result) => {

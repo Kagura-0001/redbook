@@ -2,9 +2,9 @@
  * Request pacing and risk cooldown, shared by every redbook process of one account.
  *
  * Each CLI command is a separate process, so the time of the last request lives
- * in state/<account>.json instead of memory. When XHS answers with a captcha or
- * an IP block, the account goes into cooldown and later commands fail fast with
- * RiskCooldownError rather than digging the hole deeper.
+ * in state/<account>.json instead of memory. A captcha on a read or an IP block
+ * pauses the whole account. A captcha on a write (publishing draws them often)
+ * only pauses writes, so reading keeps working.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,10 +15,17 @@ import { RiskCooldownError } from "./errors.js";
 export const MIN_GAP_MS = 1000;
 export const COOLDOWN_MS = 30 * 60_000;
 
+export type Scope = "read" | "write";
+
+export interface Cooldown {
+  until: number;
+  reason: string;
+}
+
 interface PaceState {
   lastRequestAt?: number;
-  cooldownUntil?: number;
-  cooldownReason?: string;
+  cooldown?: Cooldown;
+  writeCooldown?: Cooldown;
 }
 
 function stateFile(account: string): string {
@@ -38,6 +45,10 @@ function writeState(account: string, state: PaceState): void {
   writeFileSync(stateFile(account), JSON.stringify(state) + "\n");
 }
 
+function active(c: Cooldown | undefined): Cooldown | null {
+  return c && c.until > Date.now() ? c : null;
+}
+
 // Humans don't click at a fixed rhythm: a short gaussian jitter, plus the odd
 // longer pause.
 function jitterMs(): number {
@@ -51,33 +62,40 @@ function jitterMs(): number {
 const queues = new Map<string, Promise<void>>();
 
 /** Resolve when it is this account's turn to send a request. */
-export function pace(account: string, gapMs: number = MIN_GAP_MS): Promise<void> {
-  const turn = (queues.get(account) ?? Promise.resolve()).then(() => waitTurn(account, gapMs));
+export function pace(account: string, gapMs: number = MIN_GAP_MS, scope: Scope = "read"): Promise<void> {
+  const turn = (queues.get(account) ?? Promise.resolve()).then(() => waitTurn(account, gapMs, scope));
   queues.set(account, turn.catch(() => {}));
   return turn;
 }
 
-async function waitTurn(account: string, gapMs: number): Promise<void> {
+async function waitTurn(account: string, gapMs: number, scope: Scope): Promise<void> {
   const state = readState(account);
-  if (state.cooldownUntil && state.cooldownUntil > Date.now()) {
-    throw new RiskCooldownError(state.cooldownUntil, state.cooldownReason ?? "risk control", account);
-  }
+  const all = active(state.cooldown);
+  if (all) throw new RiskCooldownError(all.until, all.reason, account, "all");
+  const writes = scope === "write" ? active(state.writeCooldown) : null;
+  if (writes) throw new RiskCooldownError(writes.until, writes.reason, account, "write");
+
   const wait = (state.lastRequestAt ?? 0) + gapMs + jitterMs() - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   writeState(account, { ...readState(account), lastRequestAt: Date.now() });
 }
 
-export function startCooldown(account: string, reason: string, ms: number = COOLDOWN_MS): void {
-  writeState(account, { ...readState(account), cooldownUntil: Date.now() + ms, cooldownReason: reason });
+export function startCooldown(
+  account: string,
+  reason: string,
+  scope: "all" | "write" = "all",
+  ms: number = COOLDOWN_MS
+): void {
+  const key = scope === "write" ? "writeCooldown" : "cooldown";
+  writeState(account, { ...readState(account), [key]: { until: Date.now() + ms, reason } });
 }
 
-export function cooldownStatus(account: string): { until: number; reason: string } | null {
+export function cooldownStatus(account: string): { cooldown: Cooldown | null; writeCooldown: Cooldown | null } {
   const state = readState(account);
-  if (!state.cooldownUntil || state.cooldownUntil <= Date.now()) return null;
-  return { until: state.cooldownUntil, reason: state.cooldownReason ?? "risk control" };
+  return { cooldown: active(state.cooldown), writeCooldown: active(state.writeCooldown) };
 }
 
 export function clearCooldown(account: string): void {
-  const { cooldownUntil, cooldownReason, ...rest } = readState(account);
-  writeState(account, rest);
+  const { lastRequestAt } = readState(account);
+  writeState(account, { lastRequestAt });
 }

@@ -26,10 +26,16 @@ test("concurrent requests queue up", async () => {
 
 test("cooldown blocks requests until cleared", async () => {
   startCooldown("c", "a captcha");
-  assert.equal(cooldownStatus("c").reason, "a captcha");
-  await assert.rejects(pace("c"), (err) => err instanceof RiskCooldownError && errorInfo(err).exit === 4);
+  assert.equal(cooldownStatus("c").cooldown.reason, "a captcha");
+  await assert.rejects(pace("c"), (err) => err instanceof RiskCooldownError && errorInfo(err).code === "risk_cooldown");
 
   clearCooldown("c");
-  assert.equal(cooldownStatus("c"), null);
+  assert.deepEqual(cooldownStatus("c"), { cooldown: null, writeCooldown: null });
   await pace("c", 0);
+});
+
+test("a write cooldown only blocks writes", async () => {
+  startCooldown("d", "a captcha", "write");
+  await pace("d", 0, "read");
+  await assert.rejects(pace("d", 0, "write"), (err) => errorInfo(err).code === "write_cooldown" && errorInfo(err).exit === 4);
 });
