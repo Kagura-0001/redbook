@@ -1,0 +1,41 @@
+name: Release tarball
+
+# Every push to main publishes a built package as the "latest" GitHub release,
+# so it installs with:
+#   npm install -g https://github.com/Kagura-0001/redbook/releases/latest/download/redbook.tgz
+# (`npm install -g github:...` can't be used: npm runs `prepare` for global git
+# installs without dev dependencies, so tsc is missing.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - run: node --test
+
+      - run: npm pack && mv lucasygu-redbook-*.tgz redbook.tgz
+
+      - name: Replace the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest redbook.tgz --latest --target "$GITHUB_SHA" \
+            --title "redbook ${GITHUB_SHA::7}" \
+            --notes "Built from $GITHUB_SHA. Install or update: npm install -g https://github.com/$GITHUB_REPOSITORY/releases/latest/download/redbook.tgz"
