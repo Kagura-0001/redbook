@@ -13,12 +13,17 @@ Both are conditional jobs in `.github/workflows/npm-publish.yml`. Manual trigger
 ## Build & Test
 
 - `npm run build` — TypeScript compile + chmod
-- No test suite yet — verify manually with `redbook whoami`
+- `npm test` — build, then `node --test` over `test/*.test.js` (runs against `dist/`, no network)
+- Live check: `redbook whoami`; set `REDBOOK_HOME` to a temp dir to keep test accounts out of `~/.redbook`
 
 ## Project Structure
 
-- `src/cli.ts` — CLI entry point, 21 commands, `getClient()` is the single cookie→client funnel
-- `src/lib/client.ts` — XHS API client (`postComment`, `replyComment`, etc.)
+- `src/cli.ts` — CLI entry point. `getClient()` picks the cookies (which account), `run()` maps errors to codes and exit statuses, `write()` handles `--dry-run` and the audit log
+- `src/lib/client.ts` — XHS API client; every request goes through `send()` (pacing, GET retries)
+- `src/lib/accounts.ts` — saved accounts under `~/.redbook` (`$REDBOOK_HOME`), audit log
+- `src/lib/pace.ts` — per-account request pacing and risk cooldown, shared across processes via `state/<account>.json`
+- `src/lib/errors.ts` — error classes and `errorInfo()` (stable codes; exit 3 = login, 4 = risk control)
+- `src/lib/report.ts` — `account-report` aggregation
 - `src/lib/cookies.ts` — Cookie extraction with Chrome profile auto-discovery
 - `src/lib/signing.ts` — Request signing
 - `src/lib/analyze.ts` — Viral note analysis and question detection
@@ -26,7 +31,7 @@ Both are conditional jobs in `.github/workflows/npm-publish.yml`. Manual trigger
 - `src/lib/template.ts` — Viral content template extraction
 - `src/lib/health.ts` — Note health check: level detection, sensitive words, tag count
 - `src/lib/render.ts` — Card rendering (markdown → PNG via puppeteer-core, optional dep)
-- `SKILL.md` — Skill documentation (serves both Claude Code and OpenClaw/ClawHub)
+- `SKILL.md` — Skill documentation (serves both Claude Code and OpenClaw/ClawHub). Kept short; long material lives in `references/`
 - `.github/workflows/npm-publish.yml` — CI: build, npm publish, ClawHub publish
 
 ## Render Command (Optional)
