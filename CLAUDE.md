@@ -12,7 +12,7 @@ Both are conditional jobs in `.github/workflows/npm-publish.yml`. Manual trigger
 
 ## Fork
 
-This is Kagura-0001's fork of lucasygu/redbook, installed with `npm install -g github:Kagura-0001/redbook` (the `prepare` script builds `dist/` during a git install). When upstream fixes signing or adds endpoints, bring them in with `git fetch upstream && git merge upstream/main`, then push and reinstall. The package keeps the `@lucasygu/redbook` name so a git install replaces the npm one in place.
+This is Kagura-0001's fork of lucasygu/redbook, installed with `npm install -g https://github.com/Kagura-0001/redbook/releases/latest/download/redbook.tgz` (a package built by `.github/workflows/release.yml` on every push to main; `npm install -g github:...` doesn't work because npm skips dev dependencies when running `prepare` for global git installs). When upstream fixes signing or adds endpoints, bring them in with `git fetch upstream && git merge upstream/main`, then push and reinstall. The package keeps the `@lucasygu/redbook` name so a git install replaces the npm one in place.
 
 ## Build & Test
 
