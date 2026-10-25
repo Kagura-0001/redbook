@@ -445,7 +445,7 @@ More content...
 - Purely offline — no XHS API or cookies required
 - Output images are ready for `redbook post --images cover.png card_1.png ...`
 
-**Dependencies:** Requires `puppeteer-core` and `marked` (optional, install with `npm install -g puppeteer-core marked`).
+**Dependencies:** uses your installed Chrome.
 
 **Composition with other modules:**
 - Pairs with Module H (Content Brainstorm) — generate content ideas, write markdown, render to cards

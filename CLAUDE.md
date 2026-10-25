@@ -28,6 +28,10 @@ This is Kagura-0001's fork of lucasygu/redbook, installed with `npm install -g h
 - `src/lib/pace.ts` — per-account request pacing and risk cooldown, shared across processes via `state/<account>.json`
 - `src/lib/errors.ts` — error classes and `errorInfo()` (stable codes; exit 3 = login, 4 = risk control)
 - `src/lib/report.ts` — `account-report` aggregation
+- `src/lib/browser.ts` — redbook's own Chrome window (profile under `~/.redbook/chrome/<account>`, DevTools port, stays open)
+- `src/lib/creator.ts` — fills the creator center publish form (`draft`); selectors follow xpzouying/xiaohongshu-mcp
+- `src/lib/note.ts` — reads a note directory (post.md + images/)
+- `src/lib/chrome.ts` — finds Chrome, loads puppeteer-core (now a regular dependency, also used by `render`)
 - `src/lib/cookies.ts` — Cookie extraction with Chrome profile auto-discovery
 - `src/lib/signing.ts` — Request signing
 - `src/lib/analyze.ts` — Viral note analysis and question detection
@@ -41,7 +45,7 @@ This is Kagura-0001's fork of lucasygu/redbook, installed with `npm install -g h
 ## Render Command (Optional)
 
 - `redbook render <file>` — markdown → styled PNG cards using user's existing Chrome
-- Requires `puppeteer-core` and `marked` (optional peer deps, lazy imported)
+- Uses `puppeteer-core` and `marked` (regular dependencies, imported lazily)
 - Uses Chrome at `/Applications/Google Chrome.app/...` or `CHROME_PATH` env var
 - No cookies/XHS API needed — purely offline
 - HTML/CSS templates embedded as TypeScript template literals (no external files)

@@ -224,7 +224,7 @@ redbook render content.md --pagination separator --json
 - `--height <n>`: Card height in px (default: 1440)
 - `--dpr <n>`: Device pixel ratio (default: 2)
 
-**Requires:** `puppeteer-core` and `marked` (`npm install -g puppeteer-core marked`). Does NOT require XHS cookies — purely offline rendering.
+Uses your installed Chrome. Does NOT require XHS cookies — purely offline rendering.
 
 **Override Chrome path:** Set `CHROME_PATH` environment variable if Chrome is not in the standard location.
 
@@ -267,6 +267,40 @@ Show or clear an account's risk-control cooldown. A captcha on a read, or an IP 
 redbook cooldown --account brand
 redbook cooldown --account brand --clear   # only after the captcha is solved in the browser
 ```
+
+### `redbook draft <note-dir>`
+
+Fills the creator center's image-note form in redbook's own Chrome window: uploads the images, types the title and body, adds the topics, then stops. The user looks it over in the window, edits if they like, and presses 发布 (or 定时发布 / 暂存离开). Nothing is published by redbook. This avoids the API captcha on publishing, because the real page does the publishing.
+
+A note directory holds `post.md` and `images/`:
+
+```
+my-note/
+  post.md        # frontmatter, then the body
+  images/        # 1.png, 2.png, …; 1.png is the cover
+```
+
+```markdown
+---
+title: 测流式视频bench测到想哭🥲
+topics: [流式视频理解, 科研日常]
+---
+
+正文……
+
+## 复盘
+Anything from the first "## " heading on is notes, never posted.
+```
+
+redbook's window uses its own Chrome profile under `~/.redbook/chrome/<account>` and stays open after the command. If it isn't logged in, redbook copies the login cookies from your browser (the same session, so nothing gets logged out); if that isn't enough, it leaves the login page up for a QR scan and exits with `not_logged_in`.
+
+```bash
+redbook draft notes/2026-10-25-streaming-bench
+```
+
+### `redbook browser`
+
+Opens the creator center's publish page in redbook's window, logging it in the same way. Use it to log in by QR once, or to publish by hand.
 
 ### `redbook post` (Limited)
 

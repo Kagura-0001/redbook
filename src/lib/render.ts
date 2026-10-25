@@ -1,13 +1,14 @@
 /**
  * Card rendering module — converts markdown to styled PNG image cards for Xiaohongshu.
  *
- * Uses puppeteer-core (optional dependency) to screenshot HTML templates via the user's
+ * Uses puppeteer-core to screenshot HTML templates via the user's
  * existing Chrome installation. No XHS API or cookies needed — purely offline rendering.
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import kleur from "kleur";
+import { findChrome, loadPuppeteer } from "./chrome.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -488,55 +489,9 @@ body {
 </body></html>`;
 }
 
-// ─── Chrome Discovery ───────────────────────────────────────────────────────
-
-function findChromeExecutable(): string {
-  // Allow override via environment variable
-  if (process.env.CHROME_PATH && existsSync(process.env.CHROME_PATH)) {
-    return process.env.CHROME_PATH;
-  }
-
-  if (process.platform === "darwin") {
-    const candidates = [
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ];
-    for (const p of candidates) {
-      if (existsSync(p)) return p;
-    }
-  }
-
-  throw new Error(
-    "Chrome not found. Install Google Chrome or set CHROME_PATH environment variable.\n" +
-      "Expected: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  );
-}
-
-// ─── Lazy Dependency Loading ────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function importPuppeteer(): Promise<any> {
-  try {
-    return await import("puppeteer-core");
-  } catch {
-    console.error(kleur.red("Card rendering requires puppeteer-core."));
-    console.error(kleur.dim("Install it with:"));
-    console.error(kleur.dim("  npm install -g puppeteer-core"));
-    process.exit(1);
-  }
-}
-
 async function markdownToHtml(md: string): Promise<string> {
-  try {
-    const { marked } = await import("marked");
-    return await marked.parse(md);
-  } catch {
-    console.error(kleur.red("Card rendering requires marked."));
-    console.error(kleur.dim("Install it with:"));
-    console.error(kleur.dim("  npm install -g marked"));
-    process.exit(1);
-  }
+  const { marked } = await import("marked");
+  return marked.parse(md);
 }
 
 // ─── Main Render Function ───────────────────────────────────────────────────
@@ -584,15 +539,13 @@ export async function renderCards(
   // Paginate content
   const pages = paginateContent(body, opts.pagination);
 
-  // Lazy-load dependencies
-  const puppeteer = await importPuppeteer();
-  const chromePath = findChromeExecutable();
+  const puppeteer = await loadPuppeteer();
+  const chromePath = findChrome();
 
   console.error(kleur.dim(`Using Chrome: ${chromePath}`));
   console.error(kleur.dim(`Style: ${style.name} | Pages: ${pages.length} | ${opts.width}x${opts.height} @${opts.dpr}x`));
 
-  const launch = puppeteer.default?.launch ?? puppeteer.launch;
-  const browser = await launch.call(puppeteer.default ?? puppeteer, {
+  const browser = await puppeteer.launch({
     executablePath: chromePath,
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],

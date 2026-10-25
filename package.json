@@ -54,24 +54,12 @@
   "dependencies": {
     "@steipete/sweet-cookie": "^0.1.0",
     "commander": "^13.1.0",
-    "kleur": "^4.1.5"
-  },
-  "peerDependencies": {
-    "puppeteer-core": ">=21.0.0",
-    "marked": ">=9.0.0"
-  },
-  "peerDependenciesMeta": {
-    "puppeteer-core": {
-      "optional": true
-    },
-    "marked": {
-      "optional": true
-    }
+    "kleur": "^4.1.5",
+    "marked": "^15.0.0",
+    "puppeteer-core": "^24.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "puppeteer-core": "^24.0.0",
-    "marked": "^15.0.0",
     "typescript": "^5.7.0"
   }
 }
