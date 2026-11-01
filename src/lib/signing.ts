@@ -14,6 +14,7 @@
  */
 
 import crypto from "node:crypto";
+import { nextPageRequest, type PageSession } from "./page-session.js";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -213,7 +214,8 @@ function buildPayloadArray(
   md5PathHex: string,
   a1Value: string,
   contentString: string,
-  timestamp?: number
+  ts: number,
+  page: PageSession
 ): number[] {
   const payload: number[] = [];
 
@@ -226,8 +228,6 @@ function buildPayloadArray(
   payload.push(...seedBytes);
   const seedByte0 = seedBytes[0];
 
-  // Timestamp
-  const ts = timestamp ?? Date.now() / 1000;
   const tsMs = Math.floor(ts * 1000);
 
   // Timestamp bytes [8-15] — raw LE int64 (no XOR in v4.3.1)
@@ -235,17 +235,13 @@ function buildPayloadArray(
   payload.push(...tsBytes);
 
   // Page load timestamp [16-23]
-  const timeOffset = randomInt(10, 50);
-  const pageLoadTs = Math.floor((ts - timeOffset) * 1000);
-  payload.push(...intToLeBytes(pageLoadTs, 8));
+  payload.push(...intToLeBytes(page.loadedAt, 8));
 
   // Sequence counter [24-27]
-  const sequenceValue = randomInt(15, 50);
-  payload.push(...intToLeBytes(sequenceValue, 4));
+  payload.push(...intToLeBytes(page.seq, 4));
 
   // Window props length [28-31]
-  const windowPropsLength = randomInt(1000, 1200);
-  payload.push(...intToLeBytes(windowPropsLength, 4));
+  payload.push(...intToLeBytes(page.windowProps, 4));
 
   // URI content length [32-35] — UTF-8 byte length (not char count)
   payload.push(...intToLeBytes(Buffer.byteLength(contentString, "utf-8"), 4));
@@ -385,7 +381,7 @@ function weightedChoice<T>(options: T[], weights: number[]): T {
   return options[options.length - 1];
 }
 
-function generateFingerprint(cookies: Record<string, string>, userAgent: string, signLocation: string = "https://www.xiaohongshu.com/explore"): Record<string, unknown> {
+function generateFingerprint(cookies: Record<string, string>, userAgent: string, x36: number, signLocation: string = "https://www.xiaohongshu.com/explore"): Record<string, unknown> {
   const cookieString = Object.entries(cookies)
     .map(([k, v]) => `${k}=${v}`)
     .join("; ");
@@ -449,7 +445,7 @@ function generateFingerprint(cookies: Record<string, string>, userAgent: string,
     x33: "0",
     x34: "0",
     x35: "0",
-    x36: String(randomInt(1, 20)),
+    x36: String(x36),
     x37: "0|0|0|0|0|0|0|0|0|1|0|0|0|0|0|0|0|0|1|0|0|0|0|0",
     x38: "0|0|1|0|1|0|0|0|0|0|1|0|1|0|1|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0",
     x39: 0,
@@ -685,6 +681,8 @@ export function signMainApi(
     .update(contentString, "utf-8")
     .digest("hex");
 
+  const page = nextPageRequest(a1, tsMs);
+
   let xs: string;
   if (signFormat === "xyw") {
     xs = buildXywSignature(contentString, a1, tsMs);
@@ -695,7 +693,7 @@ export function signMainApi(
       : crypto.createHash("md5").update(uriPath, "utf-8").digest("hex");
 
     // Build payload array and sign
-    const payloadArray = buildPayloadArray(dValue, md5PathHex, a1, contentString, ts);
+    const payloadArray = buildPayloadArray(dValue, md5PathHex, a1, contentString, ts, page);
     const xorResult = xorTransform(payloadArray);
     const x3Signature = x3Base64Encode(xorResult.slice(0, PAYLOAD_LENGTH));
 
@@ -706,7 +704,7 @@ export function signMainApi(
   }
 
   // Build x-s-common
-  const fingerprint = generateFingerprint(cookies, USER_AGENT, signLocation);
+  const fingerprint = generateFingerprint(cookies, USER_AGENT, page.x36, signLocation);
   const b1 = generateB1(fingerprint);
   const x9 = crc32JsInt(b1);
   const xsCommonStruct = { ...XSCOMMON_TEMPLATE, x5: a1, x8: b1, x9 };
