@@ -14,7 +14,9 @@ redbook search "MCP Server" --page 2 --json           # Pagination
 **Options:**
 - `--sort <type>`: `general` (default), `popular`, `latest`
 - `--type <type>`: `all` (default), `video`, `image`
-- `--page <n>`: Page number (default: 1)
+- `--since <span>`: `any` (default), `day`, `week`, `halfyear` — the page's 发布时间 filter (window only)
+- `--page <n>`: Page number (default: 1). In the window, later pages load by scrolling, like a person
+- `--via <how>`: `window` (default) opens the search page in redbook's Chrome window; `api` sends signed API calls. `REDBOOK_VIA` sets the default
 
 ### `redbook read <url>`
 
@@ -24,7 +26,7 @@ Read a note's full content — title, body text, images, likes, comments count.
 redbook read "https://www.xiaohongshu.com/explore/abc123" --json
 ```
 
-Accepts full URLs or short note IDs. Falls back to HTML scraping if API returns captcha.
+In the window (default) it opens the note page and takes the note the page was served with, so it needs the full `webUrl` with `xsec_token`. With `--via api` it also accepts short note IDs and falls back to HTML scraping if the API returns a captcha.
 
 ### `redbook comments <url>`
 

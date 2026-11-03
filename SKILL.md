@@ -28,7 +28,7 @@ Use the `redbook` CLI to search notes, read content, analyze creators, automate 
 
 **Install:** `npm install -g https://github.com/Kagura-0001/redbook/releases/latest/download/redbook.tgz` (run it again to update).
 
-> **⚠️ Research discipline (read this first).** XHS 风控 throttles *reading*, not just writing. Any research that reads more than a handful of notes MUST run through the **[Research Loop](references/research-loop.md)** — **human-paced by default** (~20 s/note, one at a time; a typical job finishes in tens of minutes, large ones spread across the day). Hammering `read` / `comments` / `analyze-viral` in a tight loop trips captcha / IP block (300012) within a few dozen hits and degrades the account for hours. ⚡ Fast mode is **emergency-only** and requires a printed warning + explicit user opt-in. Never fire reads in parallel or with zero delay.
+> **⚠️ Research discipline (read this first).** XHS 风控 throttles *reading*, not just writing. Any research that reads more than a handful of notes MUST run through the **[Research Loop](references/research-loop.md)** — **human-paced by default** (~20 s/note, one at a time; a typical job finishes in tens of minutes, large ones spread across the day). Hammering `read` / `comments` / `analyze-viral` in a tight loop trips captcha / IP block (300012) within a few dozen hits and degrades the account for hours. ⚡ Fast mode is **emergency-only** and requires a printed warning + explicit user opt-in. Never fire reads in parallel or with zero delay. **Searches count as reads:** a keyword sweep is the riskiest thing you can do here. Both captchas so far came from back-to-back searches with nothing opened in between (#7 of a sweep at 20–50 s gaps; #18 at 30–60 s gaps, after 3 searches fired within 5 s). Space searches 45–90 s apart, run no more than ~10 in a row, and read a few hits between them.
 
 ## Usage
 
@@ -43,8 +43,10 @@ Use the `redbook` CLI to search notes, read content, analyze creators, automate 
 
 | Intent | Command |
 |--------|---------|
-| Search notes | `redbook search "keyword" --json` |
-| Read a note | `redbook read <url> --json` |
+| Search notes | `redbook search "keyword" --json` (opens the page in redbook's window) |
+| Newest posts from the last week | `redbook search "keyword" --sort latest --since week --json` |
+| Read a note | `redbook read <webUrl> --json` (opens the page in redbook's window) |
+| Use signed API calls instead | add `--via api` to `search` / `read`, or set `REDBOOK_VIA=api` |
 | Get comments | `redbook comments <url> --json --all` |
 | Creator profile | `redbook user <userId-or-profileUrl> --json` |
 | Creator's posts | `redbook user-posts <userId-or-profileUrl> --json` |
@@ -164,10 +166,14 @@ XHS enforces aggressive anti-spam (风控) that detects automated behavior throu
 
 ---
 
-## API vs Browser Limitations
+## Window vs API
 
-The following operations work reliably via API:
-- **Reading**: search, notes, comments, user profiles, feed, favorites
+`search` and `read` run in redbook's own Chrome window by default (`~/.redbook/chrome/<account>`, the same window `draft` uses). redbook opens the real search or note page in a background tab and takes what the page itself received. The page signs its own requests and sends them with Chrome's real headers, fingerprint and TLS. Filters are picked by hovering 筛选 and clicking the option, as a person would. The tab stays open and later commands reuse it, and the window never comes to the front (on macOS it starts with `open -g`). Pacing, cooldown and exit codes are the same as for API calls. If a captcha shows up, it is in that window: tell the user to solve it there, then `redbook cooldown --clear`.
+
+`--via api` (or `REDBOOK_VIA=api`) sends signed requests from Node instead, which is what every command did before. Use it only where there's no Chrome (cloud/OpenClaw). The `--since` filter only works in the window.
+
+The following operations still go through the API:
+- **Reading**: comments, user profiles, feed, favorites
 - **Writing**: top-level comments, comment replies, collect/uncollect notes
 - **Analysis**: viral scoring, template extraction, batch reply planning
 
@@ -254,4 +260,4 @@ const topics = await client.searchTopics("Claude Code");
 - Node.js >= 22
 - Logged into xiaohongshu.com in Chrome (or Safari/Firefox with `--cookie-source`)
 - macOS (cookie extraction uses native keychain access)
-- Google Chrome, for `render` and `draft`. redbook drives your installed Chrome; no extra browser download.
+- Google Chrome, for `search`, `read`, `render` and `draft`. redbook drives your installed Chrome; no extra browser download.

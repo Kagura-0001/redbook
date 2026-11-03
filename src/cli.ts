@@ -22,7 +22,7 @@ import type { WindowCookie } from "./lib/browser.js";
 import { resolvePlatform, type PlatformConfig } from "./lib/platform.js";
 import { detectPlatform, detectPlatformForCookies } from "./lib/detect.js";
 import { XhsClient } from "./lib/client.js";
-import { NotLoggedInError, XhsApiError, errorInfo } from "./lib/errors.js";
+import { NeedVerifyError, NotLoggedInError, XhsApiError, errorInfo } from "./lib/errors.js";
 import {
   DEFAULT_ACCOUNT,
   appendAudit,
@@ -33,7 +33,7 @@ import {
   saveCookieFile,
   type SavedAccount,
 } from "./lib/accounts.js";
-import { clearCooldown, cooldownStatus } from "./lib/pace.js";
+import { MIN_GAP_MS, clearCooldown, cooldownStatus, pace, startCooldown } from "./lib/pace.js";
 import { analyzeViral, formatViralAnalysis, type ViralAnalysis } from "./lib/analyze.js";
 import {
   selectCandidates,
@@ -445,18 +445,31 @@ program
 const SORTS = { general: "general", popular: "popularity_descending", latest: "time_descending" } as const;
 const NOTE_TYPES = { all: 0, video: 1, image: 2 } as const;
 
-apiCommand("search <keyword>", "Search notes by keyword")
+addViaOption(apiCommand("search <keyword>", "Search notes by keyword"))
   .option("--page <n>", "Page number", "1")
   .option("--sort <type>", "Sort: general, popular, latest", "general")
   .option("--type <type>", "Note type: all, video, image", "all")
-  .action(withClient(async (client, opts, keyword: string) => {
-    const result = await client.searchNotes(
-      keyword,
-      parseInt(opts.page),
-      20,
-      SORTS[opts.sort as keyof typeof SORTS] ?? "general",
-      NOTE_TYPES[opts.type as keyof typeof NOTE_TYPES] ?? 0
-    );
+  .option("--since <span>", "Published within: any, day, week, halfyear (window only)", "any")
+  .action((keyword: string, opts: Opts) => run(opts, async () => {
+    let result: unknown;
+    if (via(opts) === "api") {
+      if (opts.since !== "any") throw new XhsApiError("--since only works through the window (drop --via api)", "error");
+      result = await (await getClient(opts)).searchNotes(
+        keyword,
+        parseInt(opts.page),
+        20,
+        SORTS[opts.sort as keyof typeof SORTS] ?? "general",
+        NOTE_TYPES[opts.type as keyof typeof NOTE_TYPES] ?? 0
+      );
+    } else {
+      const { searchInWindow, SORTS: sorts, NOTE_TYPES: types, SINCES: sinces } = await import("./lib/web.js");
+      checkChoice("--sort", opts.sort, sorts);
+      checkChoice("--type", opts.type, types);
+      checkChoice("--since", opts.since, sinces);
+      result = await withReader(opts, (page, homeUrl) => searchInWindow(page, homeUrl, keyword, {
+        sort: opts.sort, type: opts.type, since: opts.since, page: parseInt(opts.page),
+      }));
+    }
     enrichWithWebUrl(result, "pc_search");
     if (opts.json) return output(result, true);
 
@@ -500,10 +513,22 @@ async function fetchNote(client: XhsClient, ref: NoteRef): Promise<Rec> {
   return note;
 }
 
-apiCommand("read <url>", "Read a note by URL")
-  .action(withClient(async (client, opts, url: string) => {
+addViaOption(apiCommand("read <url>", "Read a note by URL"))
+  .action((url: string, opts: Opts) => run(opts, async () => {
     const ref = parseNoteUrl(url);
-    const note = await fetchNote(client, ref);
+    let note: Rec;
+    if (via(opts) === "api") {
+      note = await fetchNote(await getClient(opts), ref);
+    } else {
+      if (!ref.xsecToken) {
+        throw new XhsApiError("Reading through the window needs the full URL with xsec_token (the webUrl from search).", "missing_xsec_token");
+      }
+      const { readInWindow } = await import("./lib/web.js");
+      const source = new URL(url.startsWith("http") ? url : "https://x/").searchParams.get("xsec_source") ?? "pc_search";
+      note = await withReader(opts, (page, homeUrl) =>
+        readInWindow(page, `${homeUrl}/explore/${ref.noteId}?${new URLSearchParams({ xsec_token: ref.xsecToken!, xsec_source: source })}`, ref.noteId));
+      note.webUrl = buildWebUrl(ref.noteId, ref.xsecToken, source);
+    }
     // A bare /explore/<id> link hits the xhs_sec_server gate; hand back a tokenized one.
     if (ref.xsecToken && !note.webUrl) note.webUrl = buildWebUrl(ref.noteId, ref.xsecToken, "pc_share");
     if (opts.json) return output(note, true);
@@ -1103,6 +1128,58 @@ async function windowCookies(opts: Opts, login: Login): Promise<WindowCookie[]> 
     }
   }
   return cookies;
+}
+
+function addViaOption(cmd: Command): Command {
+  return cmd.option(
+    "--via <how>",
+    "window: open the page in redbook's Chrome window, like a person (default; REDBOOK_VIA). api: signed API calls"
+  );
+}
+
+function via(opts: Opts): "window" | "api" {
+  const how = String(opts.via ?? process.env.REDBOOK_VIA ?? "window");
+  if (how !== "window" && how !== "api") throw new XhsApiError(`--via must be window or api, not "${how}"`, "error");
+  return how;
+}
+
+function checkChoice(flag: string, value: string, choices: readonly string[]): void {
+  if (!choices.includes(value)) throw new XhsApiError(`${flag} must be one of ${choices.join(", ")}, not "${value}"`, "error");
+}
+
+/**
+ * Run `body` in redbook's window, in its reader tab. Waits for the account's
+ * turn and honours its cooldown like an API request. If the window isn't
+ * logged in, the login is copied over first (same session as your browser).
+ * A captcha starts the cooldown; clear it in the window itself.
+ */
+async function withReader<T>(opts: Opts, body: (page: import("puppeteer-core").Page, homeUrl: string) => Promise<T>): Promise<T> {
+  const { openWindow, setCookies } = await import("./lib/browser.js");
+  const { readerTab } = await import("./lib/web.js");
+  const account: string = opts.account ?? process.env.REDBOOK_ACCOUNT ?? DEFAULT_ACCOUNT;
+  const explicit = (opts.global ? "rednote" : opts.platform) || process.env.REDBOOK_PLATFORM;
+  const homeUrl = resolvePlatform(explicit).homeUrl;
+
+  await pace(account, MIN_GAP_MS, "read");
+  const browser = await openWindow(account);
+  try {
+    const page = await readerTab(browser, homeUrl);
+    const cookies = await page.cookies(homeUrl);
+    if (!cookies.some((c) => c.name === "web_session" && c.value)) {
+      log("redbook's window isn't logged in; copying the login over...");
+      await setCookies(browser, await windowCookies(opts, await resolveLogin(opts)));
+    }
+    return await body(page, homeUrl);
+  } catch (err) {
+    if (err instanceof NeedVerifyError) {
+      startCooldown(account, "a captcha", "all");
+      err.message += ". It's showing in redbook's window: solve it there, then run: redbook cooldown --clear" +
+        (opts.account ? ` --account ${account}` : "");
+    }
+    throw err;
+  } finally {
+    await browser.disconnect();
+  }
 }
 
 /**
