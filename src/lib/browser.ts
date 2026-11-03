@@ -99,7 +99,8 @@ async function connect(dir: string): Promise<Browser | null> {
 export async function setCookies(browser: Browser, cookies: WindowCookie[]): Promise<void> {
   const session = await browser.target().createCDPSession();
   await session.send("Storage.setCookies", {
-    cookies: cookies.map((c) => ({ ...c, path: "/", secure: true })),
+    // With an expiry they outlive a restart of the window, like the site's own login cookies.
+    cookies: cookies.map((c) => ({ ...c, path: "/", secure: true, expires: Math.floor(Date.now() / 1000) + 30 * 86400 })),
   });
   await session.detach();
 }
