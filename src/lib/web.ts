@@ -14,7 +14,7 @@
  */
 
 import type { Browser, ElementHandle, HTTPResponse, Page } from "puppeteer-core";
-import { NeedVerifyError, XhsApiError } from "./errors.js";
+import { NeedVerifyError, NotLoggedInError, XhsApiError } from "./errors.js";
 
 export type Sort = "general" | "latest" | "popular";
 export type NoteType = "all" | "video" | "image";
@@ -118,6 +118,7 @@ export async function searchInWindow(page: Page, homeUrl: string, keyword: strin
     for (let t = 0; t < 150; t++) {
       if (captcha) throw captcha;
       blockedPage(page.url());
+      if (t % 5 === 4) await loggedOut(page);
       const hit = pick();
       if (hit) return checked(hit);
       await sleep(200);
@@ -164,6 +165,24 @@ function checked(hit: Seen): Seen {
   const body = hit.body;
   if (body.success) return hit;
   throw new XhsApiError(`Search failed in redbook's window: ${JSON.stringify(body).slice(0, 200)}`, body.code as number);
+}
+
+/**
+ * The page put up its login dialog instead of loading, e.g. 电脑设备登录超限 when
+ * Xiaohongshu counts redbook's window as one computer too many.
+ */
+async function loggedOut(page: Page): Promise<void> {
+  const reason = await page.evaluate(() =>
+    document.querySelector(".login-modal") ? document.querySelector(".login-reason")?.textContent?.trim() ?? "" : null
+  ).catch(() => null);
+  if (reason !== null) throw windowLoggedOut(reason);
+}
+
+function windowLoggedOut(reason: string): NotLoggedInError {
+  return new NotLoggedInError(
+    `redbook's window is logged out${reason ? ` (${reason})` : ""}. ` +
+    "Scan the QR code in that window with the Xiaohongshu app, then run this again."
+  );
 }
 
 /** The page bounced to a captcha or the anti-scrape gate. */
@@ -248,6 +267,7 @@ export async function readInWindow(page: Page, url: string, noteId: string): Pro
   const found = await page.waitForFunction((id: string) => {
     if (location.pathname.includes("captcha")) return JSON.stringify({ captcha: location.href });
     if (location.pathname.startsWith("/404")) return JSON.stringify({ gone: location.href });
+    if (document.querySelector(".login-modal")) return JSON.stringify({ login: document.querySelector(".login-reason")?.textContent?.trim() ?? "" });
     const map = (window as unknown as { __INITIAL_STATE__?: any }).__INITIAL_STATE__?.note?.noteDetailMap;
     const note = map?.[id]?.note;
     if (note?.noteId) return JSON.stringify({ note });
@@ -258,6 +278,7 @@ export async function readInWindow(page: Page, url: string, noteId: string): Pro
 
   const result = JSON.parse((await found.jsonValue()) as string) as Rec;
   if (result.captcha) blockedPage(String(result.captcha));
+  if (result.login !== undefined) throw windowLoggedOut(String(result.login));
   if (result.gone) {
     throw new XhsApiError(
       "The note page bounced to the anti-scrape gate, which usually means a missing or expired xsec_token. Use a fresh webUrl from search.",
